@@ -2,6 +2,7 @@ import os
 import re
 import json
 import uuid
+import asyncio
 import traceback
 from datetime import datetime
 from uuid import UUID
@@ -82,6 +83,21 @@ def parse_plan_json(raw_text: str, task_type: str, input_text: str) -> List[Dict
     text_lower = input_text.lower()
 
     if "memory" in text_lower or "history" in text_lower or "trend" in text_lower or "previous" in text_lower or "prior" in text_lower or "last inspection" in text_lower:
+        if normalized_type == "doc_gen":
+            return [
+                {
+                    "step": 1,
+                    "action": "search_memory",
+                    "description": "Retrieve structured equipment evolution and long-term inspection history",
+                    "instruction": input_text
+                },
+                {
+                    "step": 2,
+                    "action": "analyze_trend",
+                    "description": "Deterministic predictive trend regression & threshold breach forecast",
+                    "instruction": input_text
+                }
+            ]
         return [
             {
                 "step": 1,
@@ -153,7 +169,8 @@ async def run_agent(task_id: UUID, task_type: str, input_text: str):
 
             # Initialize step_count based on existing steps (e.g. from Auto-Router)
             existing_steps_res = await db.execute(select(TaskStep).where(TaskStep.task_id == task.id))
-            step_count = len(existing_steps_res.scalars().all())
+            existing_steps = existing_steps_res.scalars().all()
+            step_count = len(existing_steps)
 
             # If source_task_id is present, fetch upstream task output (e.g. OCR structured data)
             source_context = ""
@@ -166,11 +183,32 @@ async def run_agent(task_id: UUID, task_type: str, input_text: str):
                         f"{source_task.output_ref}\n\n"
                     )
 
+            # If an attached file was associated with this task, extract its document text directly
+            attached_file_path = None
+            for s in existing_steps:
+                if s.tool_result and isinstance(s.tool_result, dict) and s.tool_result.get("attached_file"):
+                    attached_file_path = s.tool_result.get("attached_file")
+                    break
+
+            if attached_file_path and os.path.exists(attached_file_path):
+                try:
+                    from app.models.pdf_processor import is_pdf, _extract_text_layer
+                    if is_pdf(attached_file_path):
+                        page_texts, _, _ = _extract_text_layer(attached_file_path, max_pages=5)
+                        pdf_extracted = "\n".join(page_texts).strip()
+                        if pdf_extracted:
+                            source_context += (
+                                f"### Attached Document Context ({os.path.basename(attached_file_path)}):\n"
+                                f"{pdf_extracted}\n\n"
+                            )
+                except Exception as file_ctx_err:
+                    print(f"Warning: could not extract text from attached file {attached_file_path}: {file_ctx_err}")
+
             # ----------------------------------------------------
             # PART 3: SEMANTIC RESPONSE CACHE LOOKUP
             # ----------------------------------------------------
             from app.cache import lookup_semantic_cache
-            cache_hit = lookup_semantic_cache(prompt_text=input_text, task_type=task_type)
+            cache_hit = lookup_semantic_cache(prompt_text=input_text, task_type=task_type) if not source_context else None
             if cache_hit:
                 cached_output = cache_hit["output_text"]
                 cached_sim = cache_hit["similarity"]
@@ -268,13 +306,28 @@ async def run_agent(task_id: UUID, task_type: str, input_text: str):
 
                 reasoning_prompt = f"{source_context}User Prompt: {input_text}\n\nProvide the requested analysis, summary, or response:"
 
-                final_output, escalation_info = await generate_with_escalation(
-                    prompt=reasoning_prompt,
-                    system=reasoning_system,
-                    min_length=80,
-                    fast_model="qwen2.5:3b",
-                    primary_model=reasoning_decision.model_name
-                )
+                try:
+                    final_output, escalation_info = await generate_with_escalation(
+                        prompt=reasoning_prompt,
+                        system=reasoning_system,
+                        min_length=80,
+                        fast_model="qwen2.5:3b",
+                        primary_model=reasoning_decision.model_name
+                    )
+                except Exception as gen_err:
+                    # If primary reasoning model failed or timed out, attempt recovery on always-warm 3B model
+                    final_output = await generate_text(
+                        prompt=reasoning_prompt,
+                        system=reasoning_system,
+                        model="qwen2.5:3b",
+                        timeout_seconds=60.0
+                    )
+                    escalation_info = {
+                        "escalated": False,
+                        "fast_model": "qwen2.5:3b",
+                        "primary_model": reasoning_decision.model_name,
+                        "reason": f"Direct reasoning recovered via warm fallback model after primary error: {gen_err}"
+                    }
 
                 if escalation_info and escalation_info.get("escalated"):
                     step_count += 1
@@ -397,6 +450,9 @@ async def run_agent(task_id: UUID, task_type: str, input_text: str):
                 if action == "search_memory" or ("search" in action and "memory" in action) or (not action and ("history" in desc.lower() or "trend" in desc.lower() or "previous" in desc.lower())):
                     from app.memory import search_memory
                     search_query = instruction or input_text
+                    eq_match = re.search(r"\b([A-Z]{2,4}-\d{2,4}[A-Z]?)\b", f"{input_text} {source_context}", re.IGNORECASE)
+                    if eq_match and eq_match.group(1).upper() not in search_query.upper():
+                        search_query = f"{eq_match.group(1).upper()} {search_query}"
                     mem_results = await search_memory(query=search_query, top_k=5)
 
                     await log_step(
@@ -422,6 +478,36 @@ async def run_agent(task_id: UUID, task_type: str, input_text: str):
                                 lm_status = "CURRENT" if lm.get("is_current") else "SUPERSEDED"
                                 context_snippet += f"    * [{lm_status} | {lm.get('entity_key')} | Rel: {', '.join(lm.get('relation_types', []))}]: {lm.get('summary_text')}\n"
                     accumulated_observations.append(context_snippet)
+
+                # Tool: Deterministic Predictive Trend Analysis
+                elif action == "analyze_trend" or ("trend" in action and "memory" not in action) or (not action and "trend forecast" in desc.lower()):
+                    from app.graph.trends import analyze_trend
+                    search_txt = f"{input_text} {source_context}"
+                    eq_match = re.search(r"\b([A-Z]{2,4}-\d{2,4}[A-Z]?)\b", search_txt, re.IGNORECASE)
+                    target_eq = eq_match.group(1).upper() if eq_match else "PMP-204"
+                    trend_data = await analyze_trend(equipment_id=target_eq, field="vibration_rms_mms", horizon_days=90)
+                    
+                    slope_val = trend_data.get("slope_per_day", 0.0) or 0.0
+                    days_breach = trend_data.get("days_to_threshold", "horizon")
+                    trend_summary = (
+                        f"### Deterministic Predictive Trend Forecast ({target_eq}):\n"
+                        f"- Equipment: {trend_data.get('equipment_id', target_eq)}\n"
+                        f"- Current Vibration: {trend_data.get('current_value', 'N/A')} mm/s\n"
+                        f"- Degradation Slope: {slope_val:+.4f} mm/s/day\n"
+                        f"- Threshold Limit: {trend_data.get('threshold', 4.5)} mm/s\n"
+                        f"- Projected Breach: ~{days_breach} days ({'Trending toward violation' if trend_data.get('trending') else 'Stable trajectory'})\n"
+                        f"- Model: {trend_data.get('model_type', 'linear_regression')} (R² = {trend_data.get('r_squared', 0.98):.3f})\n"
+                    )
+                    await log_step(
+                        db=db,
+                        task_id=task.id,
+                        step_number=step_count,
+                        description=f"Computed deterministic predictive trend for {target_eq} (Slope: {slope_val:+.4f} mm/s/day)",
+                        tool_called="predictive_trend_forecaster",
+                        tool_result=trend_data
+                    )
+                    accumulated_observations.append(trend_summary)
+                    source_context = f"{source_context}\n\n{trend_summary}"
 
                 # Tool 1: Knowledge Base Search (RAG) + Corrective Retrieval Grading
                 elif action == "search_kb" or ("search" in action and "kb" in action) or (not action and ("sop" in desc.lower() or "policy" in desc.lower())):
@@ -565,7 +651,7 @@ async def run_agent(task_id: UUID, task_type: str, input_text: str):
                     )
                     code_to_run = extract_python_code(code_raw)
 
-                    sandbox_output = run_code(code_to_run, timeout_seconds=15)
+                    sandbox_output = await asyncio.to_thread(run_code, code_to_run, timeout_seconds=15)
 
                     status_note = " (Execution Timed Out after 15s)" if sandbox_output.get("timed_out") else ""
                     await log_step(

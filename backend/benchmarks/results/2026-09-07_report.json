@@ -1,0 +1,100 @@
+{
+  "timestamp": "2026-09-07T07:02:48.084521+00:00",
+  "benchmark_dataset": "refinery_scenarios_v1.jsonl",
+  "split_evaluated": "test",
+  "scenarios_count": 70,
+  "duration_seconds": 34.573,
+  "metrics": {
+    "intent_routing": {
+      "code_exec": {
+        "precision": 100.0,
+        "recall": 100.0,
+        "f1": 100.0
+      },
+      "cross_doc_query": {
+        "precision": 0.0,
+        "recall": 100.0,
+        "f1": 0.0
+      },
+      "disambiguation": {
+        "precision": 100.0,
+        "recall": 0.0,
+        "f1": 0.0
+      },
+      "doc_gen": {
+        "precision": 100.0,
+        "recall": 100.0,
+        "f1": 100.0
+      },
+      "ocr": {
+        "precision": 100.0,
+        "recall": 100.0,
+        "f1": 100.0
+      },
+      "predictive_trend": {
+        "precision": 100.0,
+        "recall": 100.0,
+        "f1": 100.0
+      },
+      "qna_search": {
+        "precision": 100.0,
+        "recall": 0.0,
+        "f1": 0.0
+      },
+      "rule_check": {
+        "precision": 85.71,
+        "recall": 100.0,
+        "f1": 92.31
+      },
+      "text_gen": {
+        "precision": 0.0,
+        "recall": 100.0,
+        "f1": 0.0
+      }
+    },
+    "router_tier_breakdown": {
+      "tier_1_count": 40,
+      "tier_2_count": 30,
+      "tier_3_count": 0,
+      "total_queries": 70,
+      "tier_1_resolution_rate": 0.5714,
+      "tier_2_fallback_rate": 0.4286,
+      "tier_3_disambiguation_rate": 0.0
+    },
+    "extraction_accuracy_pct": 92.86,
+    "rule_zone_accuracy_pct": 92.31,
+    "rule_verdict_accuracy_pct": 100.0,
+    "action_recommendation": {
+      "general_response": {
+        "precision": 72.0,
+        "recall": 100.0,
+        "f1": 83.72
+      },
+      "immediate_shutdown": {
+        "precision": 100.0,
+        "recall": 85.71,
+        "f1": 92.31
+      },
+      "manual_verification": {
+        "precision": 100.0,
+        "recall": 53.33,
+        "f1": 69.57
+      },
+      "restricted_operation": {
+        "precision": 100.0,
+        "recall": 100.0,
+        "f1": 100.0
+      },
+      "routine_monitoring": {
+        "precision": 100.0,
+        "recall": 100.0,
+        "f1": 100.0
+      },
+      "schedule_maintenance": {
+        "precision": 94.74,
+        "recall": 100.0,
+        "f1": 97.3
+      }
+    }
+  }
+}

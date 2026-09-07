@@ -117,3 +117,20 @@ class RouterDecisionSchema(BaseModel):
     was_disambiguated: bool
     confirmed_by_user: bool
     timestamp: str
+
+# Normalized Extractor & Rule Engine Schema Contract
+class ExtractedEquipmentReading(BaseModel):
+    equipment_id: Optional[str] = None
+    equipment_name: Optional[str] = None
+    equipment_type: Optional[str] = None
+    unit: Optional[str] = None
+    inspection_date: Optional[str] = None
+    vibration_velocity_rms: Optional[float] = None
+    bearing_temperature: Optional[float] = None
+    operating_pressure: Optional[float] = None
+    toxic_gas_concentration: Optional[float] = None
+    actuation_time: Optional[float] = None
+    observed_condition: Optional[str] = None
+    objective: Optional[str] = None
+    raw_measurements: Dict[str, Any] = Field(default_factory=dict)
+    extraction_source: Optional[str] = None

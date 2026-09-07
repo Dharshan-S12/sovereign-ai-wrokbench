@@ -1,0 +1,68 @@
+[
+  {
+    "id": "DEMO-01",
+    "name": "Novel Vocabulary LLM Fallback Routing",
+    "category": "Intent Routing",
+    "studio_view": "/chat",
+    "prompt": "give me the trend result",
+    "file_attachment": null,
+    "expected_behavior": "Tier 1 detects low vocabulary coverage (33%). System seamlessly invokes Tier 2 (qwen2.5:3b LLM semantic fallback) and auto-routes to predictive_trend without asking the user to disambiguate.",
+    "key_talking_points": [
+      "Lightweight TF-IDF classifier runs at sub-millisecond speeds for 60%+ of queries.",
+      "When novel wording is used, Tier 2 provides an LLM second opinion before ever bothering a human operator.",
+      "Zero disruption to the user experience."
+    ]
+  },
+  {
+    "id": "DEMO-02",
+    "name": "True Disambiguation Last Resort",
+    "category": "Intent Routing",
+    "studio_view": "/chat",
+    "prompt": "check the pump",
+    "file_attachment": null,
+    "expected_behavior": "Both Tier 1 and Tier 2 recognize that the prompt is genuinely underspecified. Tier 3 activates and displays 5 structured clickable options (Compliance Memo, Trend Forecast, Rule Check, Python Sandbox, Q&A).",
+    "key_talking_points": [
+      "Disambiguation is a true safety last resort, not a failure mode for unfamiliar phrasing.",
+      "Operator gets clear, one-click intent selection."
+    ]
+  },
+  {
+    "id": "DEMO-03",
+    "name": "Dual-Path Document OCR & Ingestion",
+    "category": "Document Vision",
+    "studio_view": "/upload",
+    "prompt": "show how trend degradation+memo with real numbers",
+    "file_attachment": "02_PMP-204_Degrading_2026-09-05.pdf",
+    "expected_behavior": "System checks text layer quality. If digital, extracts directly; if scanned, routes to qwen2.5vl:7b vision model. Extracts RMS vibration 5.4 mm/s and Bearing Temp 79.5°C.",
+    "key_talking_points": [
+      "Avoids running heavy multimodal vision models on clean digital documents, saving VRAM.",
+      "Seamlessly falls back to vision OCR on degraded field scans."
+    ]
+  },
+  {
+    "id": "DEMO-04",
+    "name": "Deterministic Safety Rule Engine (ISO 10816-3)",
+    "category": "Safety Governance",
+    "studio_view": "/tasks",
+    "prompt": "Evaluate ISO 10816-3 limits for PMP-204 vibration reading of 5.4 mm/s",
+    "file_attachment": null,
+    "expected_behavior": "Rule Engine deterministically calculates delta: (5.4 - 4.5)/4.5 = +20.0% above limit. Classifies as Zone C (Unsatisfactory). Flags non-borderline (since > 10%), bypassing unnecessary ensemble loops.",
+    "key_talking_points": [
+      "Deterministic mathematics: LLMs cannot hallucinate compliance or alter safety thresholds.",
+      "Accurate percentage proximity math protects against false borderline classifications."
+    ]
+  },
+  {
+    "id": "DEMO-05",
+    "name": "Air-Gap Network Isolation & Zero Egress Verification",
+    "category": "Cybersecurity & Sovereign AI",
+    "studio_view": "/monitor",
+    "prompt": "View live socket monitor and security telemetry",
+    "file_attachment": null,
+    "expected_behavior": "Live OS socket scan shows 0 external connections. All traffic is bound strictly to localhost (127.0.0.1).",
+    "key_talking_points": [
+      "100% on-premises sovereignty: no data ever leaves the refinery perimeter.",
+      "Tamper-evident SHA-256 hash chains guarantee audit trail immutability."
+    ]
+  }
+]

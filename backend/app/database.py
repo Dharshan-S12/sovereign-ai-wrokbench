@@ -9,7 +9,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-DATABASE_URL = os.getenv("DATABASE_URL", "postgresql+asyncpg://ai_user:ai_password@localhost:5433/sovereign_db")
+DATABASE_URL = os.getenv("DATABASE_URL", "sqlite+aiosqlite:///./storage/sovereign.db")
 SQLITE_URL = "sqlite+aiosqlite:///./storage/sovereign.db"
 
 IS_SQLITE_FALLBACK = False
@@ -20,9 +20,10 @@ def resolve_db_url(url: str) -> str:
     """Check if target Postgres DB port is responsive; otherwise fallback to local SQLite."""
     global IS_SQLITE_FALLBACK, FALLBACK_TIMESTAMP, FALLBACK_REASON
     if "sqlite" in url:
-        IS_SQLITE_FALLBACK = True
-        FALLBACK_TIMESTAMP = datetime.now(timezone.utc).isoformat()
-        FALLBACK_REASON = "Configured explicitly with SQLite URL"
+        IS_SQLITE_FALLBACK = False
+        FALLBACK_TIMESTAMP = None
+        FALLBACK_REASON = None
+        os.makedirs("./storage", exist_ok=True)
         return url
     try:
         clean_url = url.replace("+asyncpg", "").replace("postgresql://", "http://")
@@ -48,12 +49,13 @@ Base = declarative_base()
 
 def get_db_health_info() -> Dict[str, Any]:
     """Returns detailed database engine and fallback status metadata for health monitoring."""
+    active_backend = "sqlite" if ("sqlite" in ACTIVE_DB_URL or IS_SQLITE_FALLBACK) else "postgresql"
     return {
-        "active_backend": "sqlite" if IS_SQLITE_FALLBACK else "postgresql",
+        "active_backend": active_backend,
         "is_fallback": IS_SQLITE_FALLBACK,
         "fallback_timestamp": FALLBACK_TIMESTAMP,
         "fallback_reason": FALLBACK_REASON,
-        "integrity_mode": "reduced_integrity_fallback" if IS_SQLITE_FALLBACK else "high_integrity_postgresql",
+        "integrity_mode": "reduced_integrity_fallback" if IS_SQLITE_FALLBACK else f"high_integrity_{active_backend}",
         "banner_message": (
             "Running in reduced-integrity mode (SQLite fallback) — concurrent multi-user writes and JSON-graph queries may degrade."
             if IS_SQLITE_FALLBACK else None

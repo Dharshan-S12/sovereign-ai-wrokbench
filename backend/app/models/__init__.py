@@ -14,6 +14,7 @@ class TaskType(str, enum.Enum):
 class TaskStatus(str, enum.Enum):
     pending = "pending"
     running = "running"
+    processing = "processing"
     done = "done"
     failed = "failed"
     pending_approval = "pending_approval"

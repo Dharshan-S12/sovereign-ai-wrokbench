@@ -1,0 +1,8 @@
+{
+  "equipment_id": "PMP-204",
+  "equipment_name": "Crude Charge Booster Pump",
+  "unit": "CDU-1",
+  "vibration_velocity_rms": 5.4,
+  "bearing_temperature": 79.5,
+  "inspection_date": "2026-09-05"
+}

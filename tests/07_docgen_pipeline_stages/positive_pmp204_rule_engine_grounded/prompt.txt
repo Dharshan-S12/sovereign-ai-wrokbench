@@ -1,0 +1,1 @@
+Generate an authoritative compliance memo for Crude Charge Booster Pump PMP-204 in CDU-1 evaluating vibration RMS 5.4 mm/s and bearing temperature 79.5 °C according to SOP-MNT-042 and ISO 10816-3.

@@ -1,5 +1,7 @@
 import os
 import uuid
+import asyncio
+import logging
 from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, Header
 from fastapi.responses import FileResponse, PlainTextResponse, JSONResponse
@@ -41,7 +43,8 @@ async def create_auto_task(
     If confidence < 0.65 and intent is unconfirmed, returns a Disambiguation prompt.
     Otherwise creates the task, logs the intent routing step, and triggers background execution.
     """
-    route_res = auto_detect_task_intent(
+    route_res = await asyncio.to_thread(
+        auto_detect_task_intent,
         prompt=task_in.prompt,
         file_path=task_in.file_path,
         confirmed_intent=task_in.confirmed_intent
@@ -74,15 +77,36 @@ async def create_auto_task(
     detected_type = route_res.task_type
     routing_reason = route_res.routing_reason
     selected_model = route_res.model_name
+    routed_by = getattr(route_res, "routed_by", "fast_classifier")
+    vocab_cov = getattr(route_res, "vocabulary_coverage", 1.0)
+
+    # Map detected intent to valid database TaskType enum
+    db_task_type = detected_type
+    if detected_type == "predictive_trend":
+        db_task_type = "doc_gen" if any(w in (task_in.prompt or "").lower() for w in ["memo", "report", "compliance", "doc", "sop"]) else "code_exec"
+    elif detected_type == "rule_check":
+        db_task_type = "code_exec"
 
     # If OCR and a file was provided, input_ref is the file path; otherwise input_ref is the prompt
     input_ref = task_in.file_path if (detected_type == "ocr" and task_in.file_path) else task_in.prompt
 
+    valid_source_id = None
+    if task_in.source_task_id:
+        try:
+            fk_check = await db.execute(select(Task.id).where(Task.id == task_in.source_task_id))
+            if fk_check.scalars().first():
+                valid_source_id = task_in.source_task_id
+            else:
+                logging.warning(f"Ignored non-existent source_task_id {task_in.source_task_id} to prevent FK violation")
+        except Exception as fk_err:
+            logging.warning(f"Error validating source_task_id {task_in.source_task_id}: {fk_err}")
+            valid_source_id = None
+
     new_task = Task(
-        task_type=detected_type,
+        task_type=db_task_type,
         input_ref=input_ref,
-        source_task_id=task_in.source_task_id,
-        status=TaskStatus.pending
+        source_task_id=valid_source_id,
+        status=TaskStatus.processing
     )
     db.add(new_task)
     await db.commit()
@@ -92,10 +116,13 @@ async def create_auto_task(
     router_step = TaskStep(
         task_id=new_task.id,
         step_number=1,
-        description=f"Auto-Router: {routing_reason} (Confidence: {route_res.confidence:.0%})",
+        description=f"Auto-Router [{routed_by}]: {routing_reason} (Confidence: {route_res.confidence:.0%})",
         tool_called="auto_router",
         tool_result={
             "detected_task_type": detected_type,
+            "routed_task_type": db_task_type,
+            "routed_by": routed_by,
+            "vocabulary_coverage": round(vocab_cov, 3),
             "confidence": round(route_res.confidence, 2),
             "routing_reason": routing_reason,
             "target_model": selected_model,
@@ -107,43 +134,62 @@ async def create_auto_task(
     db.add(router_step)
     await db.commit()
 
-    # Trigger background execution
+    # Trigger async background execution immediately
     background_tasks.add_task(process_task, new_task.id)
 
-    return {
-        "is_disambiguation": False,
-        "id": str(new_task.id),
-        "task_type": new_task.task_type,
-        "status": new_task.status,
-        "input_ref": new_task.input_ref,
-        "output_ref": new_task.output_ref,
-        "confidence_score": new_task.confidence_score,
-        "source_task_id": str(new_task.source_task_id) if new_task.source_task_id else None,
-        "created_at": new_task.created_at.isoformat() if new_task.created_at else None,
-        "updated_at": new_task.updated_at.isoformat() if new_task.updated_at else None,
-        "steps": [
-            {
-                "id": str(router_step.id),
-                "step_number": router_step.step_number,
-                "description": router_step.description,
-                "tool_called": router_step.tool_called,
-                "tool_result": router_step.tool_result,
-                "created_at": router_step.created_at.isoformat() if router_step.created_at else None
-            }
-        ]
-    }
+    task_type_str = new_task.task_type.value if hasattr(new_task.task_type, "value") else str(new_task.task_type)
+    status_str = new_task.status.value if hasattr(new_task.status, "value") else str(new_task.status)
 
-@router.post("/", response_model=TaskSchema)
+    return JSONResponse(
+        status_code=202,
+        content={
+            "is_disambiguation": False,
+            "id": str(new_task.id),
+            "task_id": str(new_task.id),
+            "task_type": task_type_str,
+            "status": status_str,
+            "input_ref": new_task.input_ref,
+            "output_ref": new_task.output_ref,
+            "confidence_score": new_task.confidence_score,
+            "source_task_id": str(new_task.source_task_id) if new_task.source_task_id else None,
+            "created_at": new_task.created_at.isoformat() if new_task.created_at else None,
+            "updated_at": new_task.updated_at.isoformat() if new_task.updated_at else None,
+            "steps": [
+                {
+                    "id": str(router_step.id),
+                    "step_number": router_step.step_number,
+                    "description": router_step.description,
+                    "tool_called": router_step.tool_called,
+                    "tool_result": router_step.tool_result,
+                    "created_at": router_step.created_at.isoformat() if router_step.created_at else None
+                }
+            ]
+        }
+    )
+
+@router.post("/", response_model=TaskSchema, status_code=202)
 async def create_task(
     task_in: TaskCreate,
     background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db)
 ):
+    valid_source_id = None
+    if task_in.source_task_id:
+        try:
+            fk_check = await db.execute(select(Task.id).where(Task.id == task_in.source_task_id))
+            if fk_check.scalars().first():
+                valid_source_id = task_in.source_task_id
+            else:
+                logging.warning(f"Ignored non-existent source_task_id {task_in.source_task_id} in create_task")
+        except Exception as fk_err:
+            logging.warning(f"Error validating source_task_id {task_in.source_task_id}: {fk_err}")
+            valid_source_id = None
+
     new_task = Task(
         task_type=task_in.task_type,
         input_ref=task_in.input_ref,
-        source_task_id=task_in.source_task_id,
-        status=TaskStatus.pending
+        source_task_id=valid_source_id,
+        status=TaskStatus.processing
     )
     db.add(new_task)
     await db.commit()

@@ -25,7 +25,7 @@ export interface TaskStep {
 export interface TaskItem {
   id: string;
   task_type: "ocr" | "text_gen" | "doc_gen" | "code_exec" | "cross_doc_query";
-  status: "pending" | "running" | "done" | "failed" | "pending_approval" | "rejected";
+  status: "pending" | "running" | "processing" | "done" | "failed" | "pending_approval" | "rejected";
   input_ref: string;
   output_ref: string | null;
   confidence_score?: number | null;

@@ -14,6 +14,7 @@ import {
   UserCheck,
   ShieldCheck,
   AlertTriangle,
+  X,
 } from "lucide-react";
 import { fetchTasks, fetchNetworkStatus, fetchHealthStatus, getUserRole, setUserRole } from "../api";
 import type { HealthStatus, UserRole } from "../api";
@@ -24,6 +25,7 @@ export default function Layout() {
   const [externalCalls, setExternalCalls] = useState<number>(0);
   const [health, setHealth] = useState<HealthStatus | null>(null);
   const [role, setRoleState] = useState<UserRole>(getUserRole());
+  const [isBannerDismissed, setIsBannerDismissed] = useState<boolean>(false);
 
   useEffect(() => {
     const checkStatus = async () => {
@@ -78,7 +80,7 @@ export default function Layout() {
   return (
     <div className="flex flex-col h-screen w-full bg-slate-50 text-slate-900 font-sans antialiased overflow-hidden">
       {/* Top Persistent SQLite Fallback Warning Banner */}
-      {isDbFallback && (
+      {isDbFallback && !isBannerDismissed && (
         <div className="bg-amber-600 text-white px-4 py-1.5 text-xs font-mono font-semibold flex items-center justify-between shadow-xs z-30 shrink-0">
           <div className="flex items-center gap-2">
             <AlertTriangle className="h-4 w-4 shrink-0 text-amber-200 animate-pulse" />
@@ -86,9 +88,19 @@ export default function Layout() {
               <strong>REDUCED-INTEGRITY MODE:</strong> Running on SQLite local database fallback — multi-user concurrent writes and JSON graph queries may degrade.
             </span>
           </div>
-          <span className="text-[10px] bg-amber-800/60 px-2 py-0.5 rounded border border-amber-400/40">
-            AUTO-FALLBACK ACTIVE
-          </span>
+          <div className="flex items-center gap-2">
+            <span className="text-[10px] bg-amber-800/60 px-2 py-0.5 rounded border border-amber-400/40">
+              AUTO-FALLBACK ACTIVE
+            </span>
+            <button
+              type="button"
+              onClick={() => setIsBannerDismissed(true)}
+              className="p-0.5 hover:bg-amber-700/80 rounded transition-colors text-amber-200 hover:text-white cursor-pointer"
+              title="Dismiss banner"
+            >
+              <X className="h-3.5 w-3.5" />
+            </button>
+          </div>
         </div>
       )}
 
@@ -360,7 +372,11 @@ export default function Layout() {
                   DB Engine
                 </span>
                 <span className="font-bold text-emerald-800 font-mono">
-                  {isDbFallback ? "SQLite (Fallback)" : "PostgreSQL (5433)"}
+                  {health?.db_health?.active_backend === "postgresql"
+                    ? "PostgreSQL (5433)"
+                    : isDbFallback
+                    ? "SQLite (Fallback)"
+                    : "SQLite (Local Node)"}
                 </span>
               </div>
               <div className="flex items-center justify-between text-slate-600">

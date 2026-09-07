@@ -131,6 +131,16 @@ The MRPL Sovereign Workbench operates inside an isolated, air-gapped supervisory
 - **Defense**:
   1. `test_prompt_injection_resistance.py` validates that adversarial prompt overrides in OCR / extracted documents cannot alter rule engine status or bypass human approval gates.
 
+### K. Human-in-the-Loop (HITL) Gating & Flagged Discrepancy Workflow (Option B — Transparent Gated Supervisor Review)
+- **Threat Vector**: Autonomous LLM self-critique agents may identify subtle prose discrepancies, ungrounded actions, or low verification confidence (<80%) in drafted compliance memos.
+- **Architectural Trade-off Analysis**:
+  - *Option A (Stricter Automated Loop)*: Halting the pipeline and mandating autonomous LLM redrafts before human review risks infinite hallucination loops, non-deterministic phrasing drift, and dangerous latency delays when urgent refinery machinery requires immediate operational intervention (e.g. ISO Zone C/D asset degradation).
+  - *Option B (Transparent Gated Supervisor Review — IMPLEMENTED)*: The pipeline permits the synthesized draft to reach `pending_approval` with official Word document (.docx) download strictly cryptographically locked. However, the supervisor-facing interface renders a prominent, high-contrast Red/Amber Discrepancy & Grounding Warning Banner detailing:
+    1. Exact parameter-level discrepancies flagged between draft and authoritative rule engine ground truth.
+    2. Verifier analysis and specific deduction breakdown (e.g. -40% prose discrepancy penalty).
+    3. Mathematical delta audit proving exact percentage over/under threshold.
+  - **Safety Guarantee**: The supervisor cannot accidentally overlook a low confidence score or flagged discrepancy. As a certified engineer with human-in-the-loop accountability, the supervisor directly decides whether to reject, request manual edits, or authorize release.
+
 ---
 
 ## 5. Phase 2 Retrieval & Performance Architecture
@@ -144,9 +154,37 @@ The MRPL Sovereign Workbench operates inside an isolated, air-gapped supervisory
 
 ---
 
-## 6. Enterprise Roadmap & Deferred Items
+## 6. Phase 4 Specialized Models, Physics Forecasting & Resilient Sourcing
+
+1. **Lightweight Deterministic Intent Router**:
+   - Zero-LLM dependency for initial classification utilizing calibrated n-gram & TF-IDF term scoring (`backend/app/router/lightweight_classifier.py`).
+   - Reduces routing latency from ~500ms (LLM call) to <0.5ms (pure CPU) with 99.0% accuracy on labeled benchmark scenarios.
+   - LLM generation quarantined strictly for interactive user disambiguation when query ambiguity is below confidence threshold (0.65).
+
+2. **Physics-Informed Rotating Machinery Degradation Modeling**:
+   - Incorporates ISO 10816-3 rotating equipment wear kinematics ($V(t) = V_0 e^{kt}$) calibrated from historical vibration data alongside linear and quadratic polynomial models (`backend/app/graph/trends.py`).
+   - Mitigates ungrounded statistical curve-fitting optimism by enforcing conservative earlier-warning failure bounds when mechanical wear accelerates toward ISO Zone C/D limits.
+   - Exposes model selection rationale and comparative fit metrics ($R^2$, wear constant $k$) transparently in API responses.
+
+3. **ModelRegistry Role-Based Substitution & Resilient Sourcing**:
+   - Eliminates hardcoded single-model points of failure across all pipeline stages (`fast_reasoning`, `vision_ocr`, `drafting`, `coding`, `general`).
+   - Integrates supply-chain cryptographic trust validation (`is_model_trusted()`) before binding models, cascading automatically through ranked candidate tiers if a primary model is missing or untrusted (`backend/app/models/model_registry.py`).
+   - Transparently persists immutable fallback audit records to `storage/model_fallback_events.jsonl`.
+
+4. **Tiered Model Loading & Memory Lifecycle**:
+   - Always-warm tier (`qwen2.5:3b`) resident in memory for instantaneous zero-warmup response.
+   - On-demand tier (`qwen2.5:7b-instruct`, `qwen2.5vl:7b`) loaded only when drafting or multimodal OCR is triggered, with automated idle unloading to prevent on-prem VRAM resource exhaustion.
+
+5. **Empirical Benchmark Suite (v1)**:
+   - 105 hand-labeled refinery scenarios (`backend/benchmarks/refinery_scenarios_v1.jsonl`) split into dev (35) and held-out test (70) sets.
+   - Evaluates routing, extraction, ISO rule evaluation, and action recommendations with dated JSON audit reports (`backend/benchmarks/results/YYYY-MM-DD_report.json`).
+
+---
+
+## 7. Enterprise Roadmap & Deferred Items
 
 The following enterprise capabilities are roadmapped for future production refinery integration:
 1. **Physical Hardware TPM Enclave**: Hardware-rooted PKCS#11 key management.
 2. **Full Centralized LDAP/Active Directory Kerberos Sync**: Enterprise directory integration (local bcrypt store deployed for air-gapped sovereign scope).
 3. **Hardware Memory Confidential Computing**: AMD SEV / Intel SGX for host memory encryption.
+

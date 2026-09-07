@@ -106,7 +106,7 @@ export default function ChatView() {
   // Poll running tasks in messages
   useEffect(() => {
     const activeTasks = messages.filter(
-      (m) => m.role === "assistant" && m.taskId && m.taskData?.status && ["pending", "running"].includes(m.taskData.status)
+      (m) => m.role === "assistant" && m.taskId && m.taskData?.status && ["pending", "running", "processing"].includes(m.taskData.status)
     );
 
     if (activeTasks.length === 0) return;
@@ -226,7 +226,7 @@ export default function ChatView() {
                 content: `Error executing task: ${err.message}`,
                 taskData: {
                   id: "error",
-                  task_type: "text_gen",
+                  task_type: "auto_router" as any,
                   status: "failed",
                   input_ref: text,
                   output_ref: err.message,
@@ -505,10 +505,15 @@ export default function ChatView() {
                             </span>
 
                             {/* Live Status Badge */}
-                            {msg.taskData.status === "running" ? (
+                            {msg.taskData.status === "running" || msg.taskData.status === "processing" ? (
                               <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded bg-sky-50 border border-sky-300 text-sky-800 flex items-center gap-1">
                                 <span className="h-1.5 w-1.5 rounded-full bg-sky-600 animate-pulse" />
                                 Processing Trace...
+                              </span>
+                            ) : msg.taskData.status === "pending_approval" ? (
+                              <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded bg-amber-50 border border-amber-300 text-amber-800 flex items-center gap-1">
+                                <ShieldCheck className="h-3 w-3 text-amber-600" />
+                                Pending Approval
                               </span>
                             ) : msg.taskData.status === "done" ? (
                               <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded bg-emerald-100 border border-emerald-300 text-emerald-900 flex items-center gap-1">
@@ -651,7 +656,7 @@ export default function ChatView() {
                       )}
 
                       {/* Active Execution Live Progress Banner */}
-                      {msg.taskData && ["pending", "running"].includes(msg.taskData.status) && (
+                      {msg.taskData && ["pending", "running", "processing"].includes(msg.taskData.status) && (
                         <div className="p-3.5 bg-sky-50/70 border border-sky-200 rounded-xl flex items-center justify-between gap-3 text-xs font-mono text-sky-900">
                           <div className="flex items-center gap-2.5">
                             <span className="relative flex h-2.5 w-2.5">

@@ -2,13 +2,14 @@ import os
 import re
 import json
 import tempfile
-from typing import Dict, Any, List, Tuple
+from typing import Dict, Any, List, Tuple, Optional
 import pypdf
 import pypdfium2
 
 from app.models.ollama_client import generate_text
 from app.models.ocr_classify import classify_document_type
 from app.models.ocr_extract import extract_structured_fields
+from app.models.model_registry import resolve_model_for_role, ModelRole
 
 MAX_PDF_PAGES = 10
 
@@ -187,20 +188,28 @@ Output ONLY the JSON object within a ```json ``` block."""
             "error_detail": str(err)
         }
 
-async def process_pdf_document(
+async def process_pdf(
     file_path: str,
     max_pages: int = MAX_PDF_PAGES,
-    vision_model: str = "qwen2.5vl:7b",
-    text_model: str = "qwen2.5:3b"
+    text_model: Optional[str] = None,
+    vision_model: Optional[str] = None
 ) -> Dict[str, Any]:
     """
-    Process PDF documents transparently with quality-gated digital fallback:
-    - Checks quality of digital text layer (word density, garbled character ratio).
-    - If quality >= 0.70 -> PATH A (text_extraction).
-    - If quality < 0.70 (garbled, corrupt, or scanned) -> PATH B (vision_ocr via pypdfium2 + qwen2.5vl:7b).
+    DYNAMIC SOVEREIGN DUAL-PATH PDF INGESTION PIPELINE:
+    - Resolves models dynamically via ModelRegistry (no single point of failure).
+    - Extracts PDF text layer and computes text_layer_quality score (0.0 - 1.0).
+    - If quality >= 0.70 -> PATH A (digital text extraction via fast_reasoning role).
+    - If quality < 0.70 (garbled, corrupt, or scanned) -> PATH B (vision_ocr role via pypdfium2).
     """
     if not os.path.exists(file_path):
         raise FileNotFoundError(f"PDF document not found at {file_path}")
+
+    # Resolve models via ModelRegistry
+    text_res = await resolve_model_for_role(ModelRole.FAST_REASONING.value, preferred_model=text_model)
+    effective_text_model = text_res.model_name
+
+    vision_res = await resolve_model_for_role(ModelRole.VISION_OCR.value, preferred_model=vision_model)
+    effective_vision_model = vision_res.model_name
 
     # 1. Attempt Text Layer Extraction & Quality Verification
     page_texts, total_pages, is_truncated = _extract_text_layer(file_path, max_pages=max_pages)
@@ -213,8 +222,8 @@ async def process_pdf_document(
 
     # PATH A: Digital Text Layer (Quality must be >= 0.70)
     if total_text_length >= 50 and quality_score >= 0.70:
-        doc_type = await _classify_text_content(combined_text, model=text_model)
-        structured_data = await _extract_structured_from_text(combined_text, doc_type=doc_type, model=text_model)
+        doc_type = await _classify_text_content(combined_text, model=effective_text_model)
+        structured_data = await _extract_structured_from_text(combined_text, doc_type=doc_type, model=effective_text_model)
 
         structured_data["processing_path"] = "text_extraction"
         structured_data["text_layer_quality"] = quality_score
@@ -253,13 +262,13 @@ async def process_pdf_document(
             }
 
         # Classify using first page
-        doc_type = await classify_document_type(rendered_image_paths[0], model=vision_model)
+        doc_type = await classify_document_type(rendered_image_paths[0], model=effective_vision_model)
 
         all_page_results: List[Dict[str, Any]] = []
         all_raw_texts: List[str] = []
 
         for idx, img_p in enumerate(rendered_image_paths):
-            res = await extract_structured_fields(img_p, doc_type=doc_type, model=vision_model)
+            res = await extract_structured_fields(img_p, doc_type=doc_type, model=effective_vision_model)
             all_page_results.append(res)
             if res.get("raw_text"):
                 all_raw_texts.append(f"--- Page {idx+1} ---\n{res['raw_text']}")
@@ -283,3 +292,6 @@ async def process_pdf_document(
                 primary_result["raw_text"] = "\n\n".join(all_raw_texts)
 
         return primary_result
+
+# Alias for backwards compatibility
+process_pdf_document = process_pdf

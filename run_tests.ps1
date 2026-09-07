@@ -53,7 +53,17 @@ $tests = @(
     "scripts/test_cross_doc_count.py",
 
     # Phase 3 — Exhaustive End-to-End Fixture Harness (All 20 Features)
-    "../tests/run_all_fixture_tests.py"
+    "../tests/run_all_fixture_tests.py",
+
+    # Phase 4 — Specialized Models, Physics-Grounded Forecasting & Resilient Sourcing
+    "scripts/test_router_latency_and_accuracy.py",
+    "scripts/test_physics_informed_trend.py",
+    "scripts/test_model_fallback.py",
+    "scripts/test_tiered_model_loading.py",
+    "scripts/run_benchmark_suite.py",
+    "scripts/test_ollama_failure_handling.py",
+    "scripts/test_attached_file_multi_intent_routing.py",
+    "scripts/test_borderline_percentage_math.py"
 )
 
 Set-Location $backendDir

@@ -9,7 +9,8 @@ os.environ["TRANSFORMERS_OFFLINE"] = "1"
 os.environ["ANONYMIZED_TELEMETRY"] = "False"
 
 from contextlib import asynccontextmanager
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text
 from app.database import engine, Base
@@ -28,11 +29,13 @@ async def lifespan(app: FastAPI):
 
     try:
         async with engine.begin() as conn:
+            if engine.dialect.name == "postgresql":
+                await conn.execute(text("SET LOCAL lock_timeout = '2s';"))
             await conn.run_sync(Base.metadata.create_all)
             if engine.dialect.name == "postgresql":
-                await conn.execute(text("ALTER TABLE tasks ADD COLUMN IF NOT EXISTS source_task_id UUID REFERENCES tasks(id);"))
-                await conn.execute(text("ALTER TABLE tasks ADD COLUMN IF NOT EXISTS confidence_score FLOAT;"))
                 try:
+                    await conn.execute(text("ALTER TABLE tasks ADD COLUMN IF NOT EXISTS source_task_id UUID REFERENCES tasks(id);"))
+                    await conn.execute(text("ALTER TABLE tasks ADD COLUMN IF NOT EXISTS confidence_score FLOAT;"))
                     await conn.execute(text("ALTER TYPE tasktype ADD VALUE IF NOT EXISTS 'cross_doc_query';"))
                     await conn.execute(text("ALTER TYPE taskstatus ADD VALUE IF NOT EXISTS 'pending_approval';"))
                     await conn.execute(text("ALTER TYPE taskstatus ADD VALUE IF NOT EXISTS 'rejected';"))
@@ -53,15 +56,78 @@ async def lifespan(app: FastAPI):
     yield
     stop_network_monitor_loop()
 
+os.makedirs("./storage", exist_ok=True)
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+    handlers=[
+        logging.FileHandler("./storage/backend_debug.log", encoding="utf-8"),
+        logging.StreamHandler()
+    ]
+)
+
 app = FastAPI(title="Sovereign On-Prem Agentic AI Workbench", version="1.0.0", lifespan=lifespan)
 
-# Allow frontend requests
+@app.middleware("http")
+async def log_requests(request, call_next):
+    logging.info(f"Incoming HTTP request: {request.method} {request.url.path}")
+    try:
+        response = await call_next(request)
+        logging.info(f"HTTP response: {request.method} {request.url.path} -> {response.status_code}")
+        return response
+    except Exception as exc:
+        logging.error(f"HTTP unhandled exception on {request.method} {request.url.path}: {exc}", exc_info=True)
+        origin = request.headers.get("origin", "*")
+        return JSONResponse(
+            status_code=500,
+            content={
+                "detail": f"Internal server error: {str(exc)}",
+                "error_type": type(exc).__name__
+            },
+            headers={
+                "Access-Control-Allow-Origin": origin if origin else "*",
+                "Access-Control-Allow-Credentials": "true",
+                "Access-Control-Allow-Methods": "*",
+                "Access-Control-Allow-Headers": "*",
+            }
+        )
+
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    logging.error(f"Global unhandled exception on {request.method} {request.url.path}: {exc}", exc_info=True)
+    origin = request.headers.get("origin", "*")
+    return JSONResponse(
+        status_code=500,
+        content={
+            "detail": f"Internal server error: {str(exc)}",
+            "error_type": type(exc).__name__
+        },
+        headers={
+            "Access-Control-Allow-Origin": origin if origin else "*",
+            "Access-Control-Allow-Credentials": "true",
+            "Access-Control-Allow-Methods": "*",
+            "Access-Control-Allow-Headers": "*",
+        }
+    )
+
+# Allow all frontend requests and preflight origins
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173", "http://localhost:3000"],
+    allow_origins=[
+        "http://localhost:5173",
+        "http://localhost:5174",
+        "http://localhost:5175",
+        "http://localhost:3000",
+        "http://127.0.0.1:5173",
+        "http://127.0.0.1:5174",
+        "http://127.0.0.1:5175",
+        "http://127.0.0.1:3000",
+    ],
+    allow_origin_regex=r"^https?://(localhost|127\.0\.0\.1)(:[0-9]+)?$",
     allow_credentials=True,
-    allow_methods=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH", "HEAD"],
     allow_headers=["*"],
+    expose_headers=["*"],
 )
 
 app.include_router(health.router)

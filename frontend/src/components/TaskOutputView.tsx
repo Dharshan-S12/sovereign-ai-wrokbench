@@ -758,6 +758,13 @@ export const TaskOutputView: React.FC<TaskOutputViewProps> = ({ task, onTaskUpda
     const isPendingApproval = task.status === "pending_approval";
     const isRejected = task.status === "rejected";
     const approvalStep = task.steps?.find((s) => s.tool_called === "human_approval");
+    const verifierStep = task.steps?.find((s) => s.tool_called === "agent_verifier");
+    const verifierResult = verifierStep?.tool_result;
+    const verifierDiscrepancies = verifierResult?.discrepancies || [];
+    const deductions = verifierResult?.deductions_breakdown || [];
+    const verifierSummary = verifierResult?.verification_summary || "";
+    const isLowConfidence = task.confidence_score !== null && task.confidence_score !== undefined && task.confidence_score < 80.0;
+    const hasVerifierFlags = Boolean(verifierResult && (!verifierResult.verified || verifierDiscrepancies.length > 0 || isLowConfidence));
 
     return (
       <div className="mt-4 space-y-4">
@@ -788,6 +795,52 @@ export const TaskOutputView: React.FC<TaskOutputViewProps> = ({ task, onTaskUpda
                 <span>Word Download Locked</span>
               </div>
             </div>
+
+            {/* OPTION B: Prominent Verifier Discrepancy Alert Banner */}
+            {hasVerifierFlags && (
+              <div className="mb-4 p-4 rounded-xl bg-rose-50 border-2 border-rose-300 text-rose-950 space-y-2.5 shadow-xs">
+                <div className="flex items-center gap-2 font-bold text-sm text-rose-900">
+                  <AlertTriangle className="h-5 w-5 text-rose-600 shrink-0" />
+                  <span>Stage 5 Verifier Alert: Grounding Discrepancies Flagged ({task.confidence_score ?? 60.0}% Confidence)</span>
+                </div>
+                <p className="text-xs text-rose-800 leading-relaxed">
+                  The autonomous Verifier agent detected discrepancies or grounding penalties between the drafted document and authoritative engineering rules. Please review the flagged items below before signing off:
+                </p>
+
+                {verifierSummary && (
+                  <div className="p-3 bg-white/90 border border-rose-200 rounded-lg text-xs font-mono text-rose-900 leading-normal">
+                    <strong>Verifier Analysis:</strong> {verifierSummary}
+                  </div>
+                )}
+
+                {verifierDiscrepancies.length > 0 && (
+                  <div className="space-y-1.5 pt-1">
+                    <span className="text-[11px] font-mono font-bold uppercase tracking-wider text-rose-900 block">
+                      Flagged Discrepancies ({verifierDiscrepancies.length}):
+                    </span>
+                    <ul className="space-y-1 text-xs list-disc list-inside text-rose-900 font-sans">
+                      {verifierDiscrepancies.map((disc: any, dIdx: number) => (
+                        <li key={dIdx} className="break-words">
+                          {typeof disc === "string" ? disc : (
+                            disc.discrepancy || disc.description || JSON.stringify(disc)
+                          )}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+
+                {deductions.length > 0 && (
+                  <div className="pt-1 text-[11px] font-mono text-rose-800 flex flex-wrap gap-2">
+                    {deductions.map((ded: any, dIdx: number) => (
+                      <span key={dIdx} className="px-2 py-0.5 rounded bg-rose-100/80 border border-rose-300">
+                        -{ded.penalty}%: {ded.factor} ({ded.reason})
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
 
             {/* Inline Approval Form */}
             <div className="bg-white border border-amber-200 rounded-xl p-4.5 mt-4 space-y-3.5 shadow-xs">

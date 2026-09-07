@@ -18,7 +18,7 @@ def test_auto_routing():
         for item in test_prompts:
             payload = {"prompt": item["prompt"]}
             res = client.post(f"{API_BASE_URL}/tasks/auto", json=payload)
-            if res.status_code == 200:
+            if res.status_code in (200, 202):
                 data = res.json()
                 detected = data.get("task_type")
                 steps = data.get("steps", [])

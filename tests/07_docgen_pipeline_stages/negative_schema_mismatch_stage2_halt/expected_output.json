@@ -1,0 +1,5 @@
+{
+  "status": "failed",
+  "failed_at_stage": "Stage 2 (Deterministic Rule Engine)",
+  "reached_approval_queue": false
+}

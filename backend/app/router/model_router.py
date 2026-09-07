@@ -264,14 +264,24 @@ async def generate_with_escalation(
                 break
 
     if escalate_reason:
-        primary_output = await generate_text(prompt=prompt, system=system, model=primary_target, timeout_seconds=timeout_primary)
-        return primary_output, {
-            "escalated": True,
-            "fast_model": fast_target,
-            "primary_model": primary_target,
-            "reason": escalate_reason,
-            "fast_preview": fast_output[:120] if fast_output else "(empty)"
-        }
+        try:
+            primary_output = await generate_text(prompt=prompt, system=system, model=primary_target, timeout_seconds=timeout_primary)
+            return primary_output, {
+                "escalated": True,
+                "fast_model": fast_target,
+                "primary_model": primary_target,
+                "reason": escalate_reason,
+                "fast_preview": fast_output[:120] if fast_output else "(empty)"
+            }
+        except Exception as prim_err:
+            if fast_output and len(fast_output.strip()) > 0:
+                return fast_output, {
+                    "escalated": False,
+                    "fast_model": fast_target,
+                    "primary_model": primary_target,
+                    "reason": f"Primary model escalation failed ({prim_err}); falling back to fast model response"
+                }
+            raise
 
     return fast_output, {
         "escalated": False,
